@@ -41,8 +41,8 @@ public interface FlashSystemConstant {
     
     // Host management endpoints
     String MKHOST_ENDPOINT = "mkhost";
-    String ADDHOSTENDPOINT = "addhostmdiskgrpmapping";
-    String RMHOSTENDPOINT = "rmhostmdiskgrpmapping";
+    String MKVDISKHOSTMAP_ENDPOINT = "mkvdiskhostmap";
+    String RMVDISKHOSTMAP_ENDPOINT = "rmvdiskhostmap";
     String MKHOSTGROUP_ENDPOINT = "mkhostgroup";
     String ADDHOSTTOGROUP_ENDPOINT = "addhosttogroup";
     
