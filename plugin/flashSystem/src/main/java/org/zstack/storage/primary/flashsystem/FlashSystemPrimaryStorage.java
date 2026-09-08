@@ -201,10 +201,10 @@ public class FlashSystemPrimaryStorage extends PrimaryStorageBase {
     }
     
     @Override
-    protected void handle(DeleteSnapshotMsg msg) {
+    protected void handle(DeleteSnapshotOnPrimaryStorageMsg msg) {
         FlashSystemStorageVO scfg = getFlashSystemConfig();
         if (scfg == null) {
-            DeleteSnapshotReply reply = new DeleteSnapshotReply();
+            DeleteSnapshotOnPrimaryStorageReply reply = new DeleteSnapshotOnPrimaryStorageReply();
             reply.setError(operr("FlashSystem storage[uuid:%s] configuration not found", self.getUuid()));
             bus.reply(msg, reply);
             return;
@@ -219,12 +219,12 @@ public class FlashSystemPrimaryStorage extends PrimaryStorageBase {
             
             logger.info(String.format("Successfully deleted FlashSystem snapshot[name:%s]", snapshotName));
             
-            DeleteSnapshotReply reply = new DeleteSnapshotReply();
+            DeleteSnapshotOnPrimaryStorageReply reply = new DeleteSnapshotOnPrimaryStorageReply();
             bus.reply(msg, reply);
             
         } catch (Exception e) {
             logger.error(String.format("Failed to delete FlashSystem snapshot: %s", e.getMessage()), e);
-            DeleteSnapshotReply reply = new DeleteSnapshotReply();
+            DeleteSnapshotOnPrimaryStorageReply reply = new DeleteSnapshotOnPrimaryStorageReply();
             reply.setError(operr("Failed to delete FlashSystem snapshot: %s", e.getMessage()));
             bus.reply(msg, reply);
         }
