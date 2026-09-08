@@ -162,7 +162,7 @@ public class FlashSystemPrimaryStorage extends PrimaryStorageBase {
         }
         
         try {
-            VolumeSnapshotInventory snapshot = msg.getSnapshot();
+            VolumeSnapshotInventory snapshot = msg.getStruct().getSnapshot();
             String volumeName = extractVolumeName(snapshot.getVolumeInstallPath());
             String snapshotName = buildSnapshotName(snapshot.getUuid());
             
@@ -201,10 +201,10 @@ public class FlashSystemPrimaryStorage extends PrimaryStorageBase {
     }
     
     @Override
-    protected void handle(DeleteSnapshotMsg msg) {
+    protected void handle(DeleteSnapshotOnPrimaryStorageMsg msg) {
         FlashSystemStorageVO scfg = getFlashSystemConfig();
         if (scfg == null) {
-            DeleteSnapshotReply reply = new DeleteSnapshotReply();
+            DeleteSnapshotOnPrimaryStorageReply reply = new DeleteSnapshotOnPrimaryStorageReply();
             reply.setError(operr("FlashSystem storage[uuid:%s] configuration not found", self.getUuid()));
             bus.reply(msg, reply);
             return;
@@ -219,15 +219,164 @@ public class FlashSystemPrimaryStorage extends PrimaryStorageBase {
             
             logger.info(String.format("Successfully deleted FlashSystem snapshot[name:%s]", snapshotName));
             
-            DeleteSnapshotReply reply = new DeleteSnapshotReply();
+            DeleteSnapshotOnPrimaryStorageReply reply = new DeleteSnapshotOnPrimaryStorageReply();
             bus.reply(msg, reply);
             
         } catch (Exception e) {
             logger.error(String.format("Failed to delete FlashSystem snapshot: %s", e.getMessage()), e);
-            DeleteSnapshotReply reply = new DeleteSnapshotReply();
+            DeleteSnapshotOnPrimaryStorageReply reply = new DeleteSnapshotOnPrimaryStorageReply();
             reply.setError(operr("Failed to delete FlashSystem snapshot: %s", e.getMessage()));
             bus.reply(msg, reply);
         }
+    }
+    
+    // Implementación de métodos abstractos restantes con stubs básicos
+    
+    @Override
+    protected void handle(CreateImageCacheFromVolumeOnPrimaryStorageMsg msg) {
+        CreateImageCacheFromVolumeOnPrimaryStorageReply reply = new CreateImageCacheFromVolumeOnPrimaryStorageReply();
+        reply.setError(operr("CreateImageCacheFromVolume not supported for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(CreateImageCacheFromVolumeSnapshotOnPrimaryStorageMsg msg) {
+        CreateImageCacheFromVolumeSnapshotOnPrimaryStorageReply reply = new CreateImageCacheFromVolumeSnapshotOnPrimaryStorageReply();
+        reply.setError(operr("CreateImageCacheFromVolumeSnapshot not supported for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(CreateTemplateFromVolumeOnPrimaryStorageMsg msg) {
+        CreateTemplateFromVolumeOnPrimaryStorageReply reply = new CreateTemplateFromVolumeOnPrimaryStorageReply();
+        reply.setError(operr("CreateTemplateFromVolume not supported for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(DownloadDataVolumeToPrimaryStorageMsg msg) {
+        DownloadDataVolumeToPrimaryStorageReply reply = new DownloadDataVolumeToPrimaryStorageReply();
+        reply.setError(operr("DownloadDataVolume not supported for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(GetInstallPathForDataVolumeDownloadMsg msg) {
+        GetInstallPathForDataVolumeDownloadReply reply = new GetInstallPathForDataVolumeDownloadReply();
+        reply.setError(operr("GetInstallPathForDataVolumeDownload not supported for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(DeleteVolumeBitsOnPrimaryStorageMsg msg) {
+        DeleteVolumeBitsOnPrimaryStorageReply reply = new DeleteVolumeBitsOnPrimaryStorageReply();
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(DeleteBitsOnPrimaryStorageMsg msg) {
+        DeleteBitsOnPrimaryStorageReply reply = new DeleteBitsOnPrimaryStorageReply();
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(DownloadIsoToPrimaryStorageMsg msg) {
+        DownloadIsoToPrimaryStorageReply reply = new DownloadIsoToPrimaryStorageReply();
+        reply.setError(operr("DownloadIso not supported for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(DeleteIsoFromPrimaryStorageMsg msg) {
+        DeleteIsoFromPrimaryStorageReply reply = new DeleteIsoFromPrimaryStorageReply();
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(AskVolumeSnapshotCapabilityMsg msg) {
+        AskVolumeSnapshotCapabilityReply reply = new AskVolumeSnapshotCapabilityMsg.Reply();
+        reply.setSupport(true);
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(SyncVolumeSizeOnPrimaryStorageMsg msg) {
+        SyncVolumeSizeOnPrimaryStorageReply reply = new SyncVolumeSizeOnPrimaryStorageReply();
+        reply.setActualSize(msg.getVolume().getSize());
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(EstimateVolumeTemplateSizeOnPrimaryStorageMsg msg) {
+        EstimateVolumeTemplateSizeOnPrimaryStorageReply reply = new EstimateVolumeTemplateSizeOnPrimaryStorageReply();
+        reply.setError(operr("EstimateVolumeTemplateSize not supported for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(BatchSyncVolumeSizeOnPrimaryStorageMsg msg) {
+        BatchSyncVolumeSizeOnPrimaryStorageReply reply = new BatchSyncVolumeSizeOnPrimaryStorageReply();
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(MergeVolumeSnapshotOnPrimaryStorageMsg msg) {
+        MergeVolumeSnapshotOnPrimaryStorageReply reply = new MergeVolumeSnapshotOnPrimaryStorageReply();
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(FlattenVolumeOnPrimaryStorageMsg msg) {
+        FlattenVolumeOnPrimaryStorageReply reply = new FlattenVolumeOnPrimaryStorageReply();
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(RevertVolumeFromSnapshotOnPrimaryStorageMsg msg) {
+        RevertVolumeFromSnapshotOnPrimaryStorageReply reply = new RevertVolumeFromSnapshotOnPrimaryStorageReply();
+        reply.setError(operr("RevertVolumeFromSnapshot not yet implemented for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(ReInitRootVolumeFromTemplateOnPrimaryStorageMsg msg) {
+        ReInitRootVolumeFromTemplateOnPrimaryStorageReply reply = new ReInitRootVolumeFromTemplateOnPrimaryStorageReply();
+        reply.setError(operr("ReInitRootVolumeFromTemplate not supported for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(AskInstallPathForNewSnapshotMsg msg) {
+        AskInstallPathForNewSnapshotReply reply = new AskInstallPathForNewSnapshotReply();
+        reply.setError(operr("AskInstallPathForNewSnapshot not supported for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(GetPrimaryStorageResourceLocationMsg msg) {
+        GetPrimaryStorageResourceLocationReply reply = new GetPrimaryStorageResourceLocationReply();
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(CheckVolumeSnapshotOperationOnPrimaryStorageMsg msg) {
+        CheckVolumeSnapshotOperationOnPrimaryStorageReply reply = new CheckVolumeSnapshotOperationOnPrimaryStorageReply();
+        reply.setSuccess(true);
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(ShrinkVolumeSnapshotOnPrimaryStorageMsg msg) {
+        ShrinkVolumeSnapshotOnPrimaryStorageReply reply = new ShrinkVolumeSnapshotOnPrimaryStorageReply();
+        reply.setError(operr("ShrinkVolumeSnapshot not yet implemented for FlashSystem storage"));
+        bus.reply(msg, reply);
+    }
+    
+    @Override
+    protected void handle(GetVolumeSnapshotEncryptedOnPrimaryStorageMsg msg) {
+        GetVolumeSnapshotEncryptedOnPrimaryStorageReply reply = new GetVolumeSnapshotEncryptedOnPrimaryStorageReply();
+        reply.setEncrypted(false);
+        bus.reply(msg, reply);
     }
     
     /**
