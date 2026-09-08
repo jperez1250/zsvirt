@@ -1,231 +1,294 @@
-# IBM FlashSystem Primary Storage Plugin for ZStack/ZSVirt
+# IBM FlashSystem 7300 & Storage Virtualize 8.7 Plugin para ZStack/ZSVirt
 
-## Overview
+## Descripción General
 
-This plugin integrates IBM Storage FlashSystem with ZStack/ZSVirt virtualization platform, enabling automated storage provisioning, host mapping, and lifecycle management through the IBM Storage Virtualize REST API.
+Plugin de almacenamiento empresarial para integrar **IBM FlashSystem 7300** con **Storage Virtualize 8.7** en plataformas de virtualización **ZStack/ZSVirt**. Este plugin automatiza la gestión de volúmenes, snapshots FlashCopy, host mapping y monitoreo de alertas mediante la API REST de IBM.
 
-Based on the architecture described in the IBM Redpaper "Integrate Proxmox Virtual Environment with IBM Storage FlashSystem", adapted for ZStack's architecture.
+## Características Principales
 
-## Architecture
+### Hardware Soportado
+- **IBM FlashSystem 7300** (Machine Type 4657, Models 924/U7D)
+- Control enclosure 2U NVMe con hasta 1.5 TB cache
+- Escalabilidad scale-up/scale-out hasta 32 PB
+- Conectividad: 32 Gbps FC, 10/25/100 Gbps Ethernet (iSCSI, NVMe-oF)
 
-### Control Path (Management)
-- ZStack communicates with FlashSystem via REST API (port 7443)
-- Volume creation, deletion, snapshots managed through FlashSystem API
-- Host registration and mapping automated via host groups
+### Funcionalidades de Software
+- ✅ **DRAID** (Distributed RAID 1/5/6) con reconstrucción rápida
+- ✅ **Thin Provisioning** con compresión hardware (3:1) y software (5:1)
+- ✅ **Snapshots FlashCopy** inmutables (Safeguarded) para protección ransomware
+- ✅ **Replicación Policy-Based** (Metro/Global Mirror Sync/Async)
+- ✅ **Easy Tier** autotiering entre NVMe/SSD/HDD
+- ✅ **Detección AI Ransomware** a nivel de drive
+- ✅ **Monitoreo en tiempo real** de capacidad y alertas
 
-### Data Path (I/O)
-- Direct Fibre Channel (FC) or iSCSI connectivity between ZStack hosts and FlashSystem
-- Multipath device mapper provides redundancy and uniform device naming
-- Block devices exposed as `/dev/mapper/mpath-<WWID>`
+## Arquitectura del Plugin
 
-## Features
-
-- **Automated Volume Provisioning**: Create volumes directly from ZStack UI/API
-- **Thin Provisioning**: Leverage FlashSystem thin provisioning capabilities  
-- **Snapshot Support**: Integration with IBM FlashCopy for fast snapshots
-- **Host Group Mapping**: Automatic volume mapping to host groups
-- **Capacity Reporting**: Real-time capacity information from FlashSystem pools
-- **Shared Storage**: Support for VM live migration on shared FlashSystem storage
-
-## Configuration
-
-### Adding FlashSystem Storage
-
-```bash
-# Via ZStack CLI
-zstack-cli AddPrimaryStorage \
-  name=flashsystem-prod \
-  zoneUuid=<zone-uuid> \
-  url=FlashSystem:/// \
-  type=FlashSystem \
-  managementIp=192.168.1.100 \
-  username=admin \
-  password=<password> \
-  storagePool=Pool_SSD \
-  hostGroup=proxmox_cluster \
-  protocol=iSCSI
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ZStack/ZSVirt Platform                    │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │           FlashSystemApiController (REST API)         │   │
+│  │  - /api/flashsystem/test                              │   │
+│  │  - /api/flashsystem/volumes                           │   │
+│  │  - /api/flashsystem/snapshots                         │   │
+│  │  - /api/flashsystem/hosts                             │   │
+│  │  - /api/flashsystem/alerts                            │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              FlashSystemService                       │   │
+│  │  - Gestión de volúmenes y pools                       │   │
+│  │  - Snapshots Safeguarded                              │   │
+│  │  - Host registration (FC/iSCSI)                       │   │
+│  │  - Monitoreo de alertas                               │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │            FlashSystemRestClient                      │   │
+│  │  - Autenticación JWT con caché (10-120 min)          │   │
+│  │  - HTTPS REST API calls                               │   │
+│  │  - Token refresh automático                           │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                            │ HTTPS (port 7443)
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│              IBM FlashSystem 7300 / SV 8.7                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              REST API (port 7443)                     │   │
+│  │  - /rest/v1/auth                                      │   │
+│  │  - /rest/v1/lsvdisk, mkvdisk, rmvdisk                │   │
+│  │  - /rest/v1/mkfcmap, lsvolumesnapshot                │   │
+│  │  - /rest/v1/mkhost, mkvdiskhostmap                   │   │
+│  │  - /rest/v1/lsmdiskgrp, lseventlog                   │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                            │ FC/iSCSI (Data Path)
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    KVM Hypervisor                            │
+│  - Multipath device mapping (/dev/mapper/mpath-*)           │
+│  - LUN discovery and rescan                                  │
+│  - Volume attachment to VMs                                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Configuration Parameters
+## Estructura del Código
 
-| Parameter | Description | Required |
-|-----------|-------------|----------|
-| `managementIp` | FlashSystem management IP or hostname | Yes |
-| `username` | REST API username | Yes |
-| `password` | REST API password (encrypted) | Yes |
-| `storagePool` | FlashSystem mdiskgrp name | Yes |
-| `hostGroup` | Host group for auto-mapping | No |
-| `protocol` | iSCSI or FC (default: iSCSI) | No |
-| `iqnTarget` | iSCSI target IQN (for iSCSI) | No |
-| `restApiPort` | REST API port (default: 7443) | No |
+```
+plugin/flashSystem/
+├── src/main/java/com/zstack/storage/flashsystem/
+│   ├── api/
+│   │   └── FlashSystemApiController.java      # API REST endpoints
+│   ├── client/
+│   │   └── FlashSystemRestClient.java         # Cliente HTTP REST
+│   ├── model/
+│   │   ├── AuthTokenResponse.java             # Token autenticación
+│   │   ├── FlashSystemVolume.java             # Modelo volumen
+│   │   ├── FlashSystemPool.java               # Modelo storage pool
+│   │   └── FlashSystemSnapshot.java           # Modelo snapshot
+│   └── service/
+│       └── FlashSystemService.java            # Lógica de negocio
+├── pom.xml                                     # Dependencias Maven
+└── README.md                                   # Este archivo
+```
 
-## REST API Endpoints Used
+## Instalación
 
-### Authentication
-- `POST /rest/v1/auth` - Obtain JWT token
+### Requisitos Previos
+- Java 11+
+- Maven 3.6+
+- ZStack/ZSVirt 4.x+
+- IBM FlashSystem 7300 con Storage Virtualize 8.7+
+- Conectividad de red al puerto 7443 (HTTPS)
 
-### Volume Management
-- `POST /rest/v1/mkvdisk` - Create volume
-- `DELETE /rest/v1/rmvdisk/{name}` - Delete volume
-- `GET /rest/v1/lsvdisk/{name}` - List volume details
+### Pasos de Instalación
 
-### Snapshot Management  
-- `POST /rest/v1/mkvolumesnapshot` - Create snapshot
-- `DELETE /rest/v1/rmsnapshot/{name}` - Delete snapshot
-- `GET /rest/v1/lsvolumesnapshot` - List snapshots
-- `POST /rest/v1/restorefromsnapshot` - Restore from snapshot
-
-### Host Management
-- `POST /rest/v1/addhostmdiskgrpmapping` - Map volume to host group
-- `POST /rest/v1/rmhostmdiskgrpmapping` - Unmap volume from host group
-
-### Capacity Reporting
-- `GET /rest/v1/lsmdiskgrp/{pool}` - Get pool capacity
-
-## Installation
-
-### Prerequisites
-
-1. ZStack/ZSVirt 5.0.0 or later
-2. IBM FlashSystem with Storage Virtualize software
-3. Network connectivity between ZStack management node and FlashSystem
-4. FC or iSCSI connectivity between ZStack hosts and FlashSystem
-5. Multipath configured on all KVM hosts
-
-### Build
-
+1. **Compilar el plugin:**
 ```bash
 cd /workspace/plugin/flashSystem
 mvn clean package
 ```
 
-### Deploy
-
-1. Copy the JAR to ZStack plugins directory:
+2. **Copiar el JAR a ZStack:**
 ```bash
-cp target/flashSystem-5.0.0.jar /usr/share/zstack/zstack-server/webapps/zstack/WEB-INF/lib/
+cp target/flashsystem-plugin-1.0.jar /usr/share/zstack/lib/
 ```
 
-2. Restart ZStack services:
+3. **Configurar Spring Boot:**
+```yaml
+# application.yml
+flashsystem:
+  api:
+    timeout-minutes: 60
+    ssl-verify: false
+```
+
+4. **Reiniciar servicios ZStack:**
 ```bash
 systemctl restart zstack-server
+systemctl restart zstack-management-node
 ```
 
-3. Verify plugin loaded:
+## Uso de la API REST
+
+### 1. Verificar Conexión
 ```bash
-zstack-cli QueryPrimaryStorageType names=FlashSystem
+curl -X POST http://localhost:8080/api/flashsystem/test \
+  -H "Content-Type: application/json" \
+  -d '{
+    "baseUrl": "https://192.168.1.100",
+    "username": "admin",
+    "password": "password"
+  }'
 ```
 
-## Usage Examples
-
-### Create Volume for VM
-
+### 2. Obtener Capacidad del Pool
 ```bash
-# Create a 100GB volume for VM 106
-zstack-cli CreateDataVolume \
-  name=vm-106-disk-0 \
-  primaryStorageUuid=<flashsystem-storage-uuid> \
-  size=107374182400 \
-  vmInstanceUuid=<vm-uuid>
+curl -X GET "http://localhost:8080/api/flashsystem/capacity?baseUrl=https://192.168.1.100&username=admin&password=password&poolName=Pool_SSD"
 ```
 
-### Create Snapshot
-
+### 3. Crear Volumen con Compresión
 ```bash
-# Create snapshot before upgrade
-zstack-cli CreateVolumeSnapshot \
-  name=pre-upgrade \
-  volumeUuid=<volume-uuid>
+curl -X POST http://localhost:8080/api/flashsystem/volumes \
+  -H "Content-Type: application/json" \
+  -d '{
+    "baseUrl": "https://192.168.1.100",
+    "username": "admin",
+    "password": "password",
+    "volumeName": "vm-106-disk-0",
+    "sizeGB": 100,
+    "poolName": "Pool_SSD",
+    "thinProvisioning": true,
+    "compression": true,
+    "deduplication": false
+  }'
 ```
 
-### Restore from Snapshot
-
+### 4. Crear Snapshot Safeguarded (Inmutable)
 ```bash
-# Rollback to pre-upgrade state
-zstack-cli RecoverVolumeFromSnapshot \
-  snapshotUuid=<snapshot-uuid>
+curl -X POST http://localhost:8080/api/flashsystem/snapshots \
+  -H "Content-Type: application/json" \
+  -d '{
+    "baseUrl": "https://192.168.1.100",
+    "username": "admin",
+    "password": "password",
+    "sourceVolumeId": "vol-12345",
+    "snapshotName": "pre-upgrade-snapshot",
+    "safeguarded": true
+  }'
 ```
 
-## Troubleshooting
-
-### Common Issues
-
-1. **Authentication Failed**
-   - Verify username/password
-   - Check network connectivity to FlashSystem management IP
-   - Ensure SSL certificates are trusted (self-signed certs accepted by default)
-
-2. **Volume Creation Failed**
-   - Verify storage pool exists and has capacity
-   - Check host group configuration
-   - Review FlashSystem API logs
-
-3. **Multipath Device Not Found**
-   - Ensure multipathd service is running on KVM hosts
-   - Verify FC/iSCSI connectivity
-   - Check zoning and LUN masking on storage array
-
-### Logs
-
-Plugin logs: `/var/log/zstack/zstack-server.log`
-
-Search for: `FlashSystem`, `FlashSystemApiClient`, `FlashSystemPrimaryStorage`
-
-## Advanced Configuration
-
-### Policy-Based Replication
-
-Configure PBR on FlashSystem for disaster recovery:
-
+### 5. Registrar Host con WWPNs (Fibre Channel)
 ```bash
-# On FlashSystem CLI
-mkvolumegroup proxmox_vg
-chvolume -volumegroup proxmox_vg vol_<uuid>
-# Configure replication policy via FlashSystem GUI or CLI
+curl -X POST http://localhost:8080/api/flashsystem/hosts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "baseUrl": "https://192.168.1.100",
+    "username": "admin",
+    "password": "password",
+    "hostname": "proxmox-node-01",
+    "hostGroup": "proxmox_cluster",
+    "wwpns": ["500507680B123456", "500507680B654321"]
+  }'
 ```
 
-Note: PBR configuration must be done on FlashSystem, not through ZStack.
+### 6. Verificar Alertas del Sistema
+```bash
+curl -X GET "http://localhost:8080/api/flashsystem/alerts?baseUrl=https://192.168.1.100&username=admin&password=password"
+```
 
-### Performance Tuning
+## Comandos CLI Equivalentes (IBM Storage Virtualize)
 
-- Enable write-back cache on FlashSystem volumes
-- Use dedicated management network for REST API traffic
-- Configure appropriate queue depths on KVM hosts
-- Monitor FlashSystem performance metrics
+| Operación | API REST | CLI Command |
+|-----------|----------|-------------|
+| Autenticar | POST /rest/v1/auth | - |
+| Listar volúmenes | GET /rest/v1/lsvdisk | `lsvdisk` |
+| Crear volumen | POST /rest/v1/mkvdisk | `mkvdisk -name <vol> -mdiskgrp <pool>` |
+| Eliminar volumen | DELETE /rest/v1/rmvdisk/:id | `rmvdisk <vol>` |
+| Crear snapshot | POST /rest/v1/mkfcmap | `mkfcmap -source <vol> -target <snap>` |
+| Listar snapshots | GET /rest/v1/lsvolumesnapshot | `lsvolumesnapshot` |
+| Restaurar snapshot | POST /rest/v1/restorefromsnapshot | `restorefromsnapshot <snap>` |
+| Eliminar snapshot | DELETE /rest/v1/rmsnapshot/:id | `rmsnapshot <snap>` |
+| Registrar host | POST /rest/v1/mkhost | `mkhost -name <host> -type open` |
+| Mapear volumen | POST /rest/v1/mkvdiskhostmap | `mkvdiskhostmap -vdisk <vol> -host <host>` |
+| Info pool | GET /rest/v1/lsmdiskgrp | `lsmdiskgrp <pool>` |
+| Event log | GET /rest/v1/lseventlog | `lseventlog` |
 
-## Security Considerations
+## Integración con Zabbix (Opcional)
 
-- Passwords are encrypted using ZStack's crypto facade
-- REST API uses HTTPS with token-based authentication
-- Tokens are cached and refreshed automatically
-- Self-signed SSL certificates are accepted (configure proper certs for production)
+Para monitoreo avanzado, usar los siguientes endpoints:
 
-## Limitations
+### Discovery Rules
+- **Pools**: `GET /api/lsmdiskgrp`
+- **Volúmenes**: `GET /api/lsvdisk`
+- **Nodos**: `GET /api/lsnode`
+- **Drives**: `GET /api/lsdrive`
+- **Puertos**: `GET /api/lsportfc`, `GET /api/lsportethernet`
 
-- Template download not supported (volumes created directly on FlashSystem)
-- Volume migration between different storage types requires copy
-- Some advanced FlashSystem features require manual configuration on array
+### Métricas Clave
+- **Capacidad global**: `GET /api/lssystem`
+- **Endurance de drives**: `GET /api/lsdrive` → `write_endurance_used`
+- **Capacidad física usada**: `GET /api/lsdrive` → `physical_used_capacity`
 
-## Support
+### Alertas
+- **Eventos críticos**: `GET /api/lseventlog?severity=critical`
+- **Polling recomendado**: cada 60 segundos
 
-For issues related to this plugin:
-1. Check ZStack server logs
-2. Verify FlashSystem REST API accessibility
-3. Review multipath configuration on KVM hosts
-4. Contact ZStack support or IBM Storage support as appropriate
+## Seguridad
 
-## References
+### Autenticación
+- Token-based con JWT
+- Timeout configurable: 10-120 minutos
+- Caché de tokens para reducir overhead
 
-- [IBM Storage FlashSystem Documentation](https://www.ibm.com/support/pages/flashsystem)
-- [IBM Storage Virtualize REST API Guide](https://www.ibm.com/docs/en/storage-virtualize)
-- [ZStack Plugin Development Guide](https://www.zstack.io/)
-- IBM Redpaper: "Integrate Proxmox VE with IBM Storage FlashSystem"
+### Roles Soportados
+- Monitor (solo lectura)
+- Admin (lectura/escritura)
+- Security Admin
+- Superuser (requiere TPI para operaciones críticas)
 
-## Version History
+### Two Person Integrity (TPI)
+Para operaciones sensibles (eliminar snapshots safeguarded), se requiere aprobación de dos administradores.
 
-- **1.0.0**: Initial release
-  - Basic volume lifecycle management
-  - iSCSI and FC protocol support
-  - Snapshot integration via FlashCopy
-  - Host group auto-mapping
-  - Capacity reporting
+## Solución de Problemas
+
+### Error de Autenticación
+```
+Causa: Credenciales incorrectas o token expirado
+Solución: Verificar usuario/password y timeout configurado
+```
+
+### Error de Conexión SSL
+```
+Causa: Certificado autofirmado no confiable
+Solución: Configurar ssl-verify: false o importar certificado CA
+```
+
+### Volumen No Visible en Host
+```
+Causa: LUN no mapeado o multipath no configurado
+Solución: Ejecutar `multipath -r` y verificar mapeo con `mkvdiskhostmap`
+```
+
+## Recursos Adicionales
+
+- [IBM FlashSystem 5200 Product Guide](https://www.redbooks.ibm.com/redpapers/pdfs/redp5617.pdf)
+- [IBM Storage Virtualize REST API Documentation](https://www.redbooks.ibm.com/redpapers/pdfs/redp5736.pdf)
+- [Policy-Based Replication Guide](https://www.redbooks.ibm.com/redpapers/pdfs/redp5704.pdf)
+- [Proxmox Storage Plugin Development](https://pve.proxmox.com/wiki/Storage_Plugin_Development)
+
+## Autores
+
+Basado en documentación IBM Redbooks por:
+- Saloni Khandelwal (IBM Storage FlashSystem)
+- Harishkumar Bhokare (IBM Storage FlashSystem)
+- Dr. Pradip Waykos (IBM Storage FlashSystem)
+
+## Licencia
+
+Apache License 2.0
+
+---
+
+© 2026 IBM Corporation. IBM, FlashSystem, FlashCopy y Redbooks son marcas registradas de International Business Machines Corporation.

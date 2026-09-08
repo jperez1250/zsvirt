@@ -1,5 +1,5 @@
 ```
-# Java/Maven build artifacts
+# Java/Maven specific
 target/
 *.class
 *.jar
@@ -10,27 +10,28 @@ target/
 lib/
 libs/
 
-# IDE files
-.idea/
-*.iml
-*.ipr
-*.iws
-.vscode/
-
 # Logs
 *.log
 
-# Temporary files
-*.tmp
-*.temp
-*~
+# Environment
+.env
+.env.local
+*.env.*
 
-# OS files
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
 .DS_Store
 Thumbs.db
 
-# Maven
-pom.xml.tag
-pom.xml.releaseBackup
-dependency-reduced-pom.xml
+# Build system
+.mypy_cache/
+.pytest_cache/
+coverage/
+htmlcov/
+.gradle/
 ```
