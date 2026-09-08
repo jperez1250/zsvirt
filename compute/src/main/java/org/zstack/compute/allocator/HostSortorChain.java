@@ -108,7 +108,7 @@ public class HostSortorChain implements HostSortorStrategy {
     }
 
     private void reserveHost(HostInventory host, Completion cmpl){
-        Map data = new HashMap();
+        Map<String, Object> data = new HashMap<>(2);
         data.put(HostAllocatorConstant.Param.HOST, host);
         data.put(HostAllocatorConstant.Param.SPEC, allocationSpec);
 

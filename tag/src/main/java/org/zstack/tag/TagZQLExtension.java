@@ -9,6 +9,7 @@ import org.zstack.header.zql.RestrictByExprExtensionPoint;
 import org.zstack.header.zql.ZQLExtensionContext;
 import org.zstack.zql.ast.ZQLMetadata;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -16,12 +17,14 @@ public class TagZQLExtension implements RestrictByExprExtensionPoint {
     public static final String USER_TAG_NAME = "__userTag__";
     public static final String SYS_TAG_NAME = "__systemTag__";
 
-    private static Map<String, String> FALSE_OP = new HashMap();
+    private static final Map<String, String> FALSE_OP;
 
     static {
-        FALSE_OP.put("!=", "=");
-        FALSE_OP.put("not in", "in");
-        FALSE_OP.put("not like", "like");
+        Map<String, String> ops = new HashMap<>(3);
+        ops.put("!=", "=");
+        ops.put("not in", "in");
+        ops.put("not like", "like");
+        FALSE_OP = Collections.unmodifiableMap(ops);
     }
 
     private String getConditionValue(String op, ASTNode.RestrictExpr expr) {
