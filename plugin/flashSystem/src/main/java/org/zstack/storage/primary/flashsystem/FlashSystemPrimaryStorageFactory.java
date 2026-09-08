@@ -67,10 +67,50 @@ public class FlashSystemPrimaryStorageFactory implements PrimaryStorageFactory, 
     }
     
     /**
-     * Create a primary storage instance from VO
+     * Create a primary storage instance from VO and API message
      */
     @Override
-    public PrimaryStorage createPrimaryStorage(PrimaryStorageVO vo) {
+    public PrimaryStorageInventory createPrimaryStorage(PrimaryStorageVO vo, APIAddPrimaryStorageMsg msg) {
+        if (!(vo instanceof FlashSystemStorageVO)) {
+            throw new IllegalArgumentException(String.format(
+                "FlashSystemPrimaryStorageFactory only handles FlashSystemStorageVO, but got %s", 
+                vo.getClass().getName()
+            ));
+        }
+        
+        FlashSystemStorageVO flashVo = (FlashSystemStorageVO) vo;
+        
+        // Validate storage configuration before creating
+        try {
+            validateStorageConfiguration(flashVo);
+            
+            // Get initial capacity from FlashSystem
+            FlashSystemPool pool = apiClient.getPool(flashVo);
+            if (pool != null) {
+                PrimaryStorageCapacityUpdater updater = new PrimaryStorageCapacityUpdater(vo.getUuid());
+                updater.run(new PrimaryStorageCapacityUpdaterCallback() {
+                    @Override
+                    public PrimaryStorageCapacityVO call(PrimaryStorageCapacityVO cap) {
+                        cap.setTotalCapacity(pool.getTotalCapacity());
+                        cap.setAvailableCapacity(pool.getFreeCapacity());
+                        return cap;
+                    }
+                });
+            }
+        } catch (Exception e) {
+            logger.warn(String.format("Failed to initialize FlashSystem storage[uuid:%s] capacity: %s", 
+                vo.getUuid(), e.getMessage()));
+        }
+        
+        FlashSystemPrimaryStorage ps = new FlashSystemPrimaryStorage(flashVo);
+        return ps.getInventory();
+    }
+    
+    /**
+     * Get primary storage instance from VO
+     */
+    @Override
+    public PrimaryStorage getPrimaryStorage(PrimaryStorageVO vo) {
         if (!(vo instanceof FlashSystemStorageVO)) {
             throw new IllegalArgumentException(String.format(
                 "FlashSystemPrimaryStorageFactory only handles FlashSystemStorageVO, but got %s", 
@@ -78,6 +118,58 @@ public class FlashSystemPrimaryStorageFactory implements PrimaryStorageFactory, 
             ));
         }
         return new FlashSystemPrimaryStorage((FlashSystemStorageVO) vo);
+    }
+    
+    /**
+     * Get inventory by UUID
+     */
+    @Override
+    public PrimaryStorageInventory getInventory(String uuid) {
+        FlashSystemStorageVO vo = Q.New(FlashSystemStorageVO.class).eq(FlashSystemStorageVO_.uuid, uuid).find();
+        if (vo == null) {
+            return null;
+        }
+        return new FlashSystemPrimaryStorage(vo).getInventory();
+    }
+    
+    /**
+     * Validate storage protocol (FC or iSCSI)
+     */
+    @Override
+    public void validateStorageProtocol(String protocol) {
+        if (!FlashSystemConstant.FC_PROTOCOL.equals(protocol) && 
+            !FlashSystemConstant.ISCSI_PROTOCOL.equals(protocol)) {
+            throw new IllegalArgumentException(String.format(
+                "FlashSystem only supports FC or iSCSI protocol, but got %s", protocol));
+        }
+    }
+    
+    /**
+     * Validate FlashSystem storage configuration
+     */
+    private void validateStorageConfiguration(FlashSystemStorageVO scfg) {
+        if (scfg.getManagementIp() == null || scfg.getManagementIp().isEmpty()) {
+            throw new IllegalArgumentException("FlashSystem management IP is required");
+        }
+        if (scfg.getUsername() == null || scfg.getUsername().isEmpty()) {
+            throw new IllegalArgumentException("FlashSystem username is required");
+        }
+        if (scfg.getPassword() == null || scfg.getPassword().isEmpty()) {
+            throw new IllegalArgumentException("FlashSystem password is required");
+        }
+        if (scfg.getStoragePool() == null || scfg.getStoragePool().isEmpty()) {
+            throw new IllegalArgumentException("FlashSystem storage pool is required");
+        }
+        
+        // Test connection and credentials
+        try {
+            apiClient.authenticate(scfg);
+            logger.info(String.format("Successfully validated FlashSystem connection[ip:%s, pool:%s]", 
+                scfg.getManagementIp(), scfg.getStoragePool()));
+        } catch (Exception e) {
+            throw new IllegalStateException(String.format(
+                "Failed to connect to FlashSystem[%s]: %s", scfg.getManagementIp(), e.getMessage()), e);
+        }
     }
     
     /**
@@ -117,6 +209,17 @@ public class FlashSystemPrimaryStorageFactory implements PrimaryStorageFactory, 
         
         // Ensure multipath is active and volumes are accessible
         // This will be handled by the KVM backend
+    }
+    
+    @Override
+    public void startVmOnKvmSuccess(KVMHostInventory host, VmInstanceSpec spec) {
+        // No post-start actions needed
+    }
+    
+    @Override
+    public void startVmOnKvmFailed(KVMHostInventory host, VmInstanceSpec spec, ErrorCode err) {
+        logger.warn(String.format("VM %s failed to start on KVM host %s: %s", 
+            spec.getVmInventory().getUuid(), host.getManagementIp(), err));
     }
     
     /**

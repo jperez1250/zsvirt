@@ -315,6 +315,150 @@ public class FlashSystemApiClient {
     }
     
     /**
+     * Get storage pool capacity and status from FlashSystem
+     * 
+     * @param scfg FlashSystem storage configuration
+     * @return FlashSystemPool with capacity information, or null if pool not found
+     */
+    public FlashSystemPool getPool(FlashSystemStorageVO scfg) {
+        String poolName = scfg.getStoragePool();
+        if (poolName == null || poolName.isEmpty()) {
+            logger.warn("Storage pool name is not configured");
+            return null;
+        }
+        
+        try {
+            // Query the mdiskgrp (storage pool) by name
+            // The lsmdiskgrp command returns pool information including capacity
+            JsonNode response = get(scfg, FlashSystemConstant.LSMDISKGRP_ENDPOINT + "?filter=name:" + urlEncode(poolName));
+            
+            if (response == null || !response.isArray() || response.size() == 0) {
+                logger.warn(String.format("Storage pool '%s' not found on FlashSystem[%s]", 
+                    poolName, scfg.getManagementIp()));
+                return null;
+            }
+            
+            JsonNode poolNode = response.get(0);
+            FlashSystemPool pool = new FlashSystemPool();
+            
+            // Extract pool ID and name
+            pool.setId(poolNode.path("id").asText());
+            pool.setName(poolNode.path("name").asText());
+            
+            // Extract capacity values - FlashSystem returns these in bytes
+            // Need to handle both numeric and string formats depending on firmware version
+            pool.setTotalCapacity(parseCapacityValue(poolNode, "total_capacity"));
+            pool.setUsedCapacity(parseCapacityValue(poolNode, "used_capacity"));
+            pool.setFreeCapacity(parseCapacityValue(poolNode, "free_capacity"));
+            
+            // Extract status
+            String status = poolNode.path("status").asText("online");
+            pool.setStatus(status);
+            
+            logger.debug(String.format("Retrieved pool capacity for '%s': total=%d, used=%d, free=%d bytes", 
+                pool.getName(), pool.getTotalCapacity(), pool.getUsedCapacity(), pool.getFreeCapacity()));
+            
+            return pool;
+            
+        } catch (Exception e) {
+            logger.error(String.format("Failed to get pool capacity for '%s' from FlashSystem[%s]: %s", 
+                poolName, scfg.getManagementIp(), e.getMessage()), e);
+            return null;
+        }
+    }
+    
+    /**
+     * Parse capacity value from JSON node, handling different formats
+     * FlashSystem may return capacity as numeric value (bytes) or formatted string
+     */
+    private long parseCapacityValue(JsonNode node, String fieldName) {
+        JsonNode valueNode = node.path(fieldName);
+        
+        if (valueNode.isLong()) {
+            // Direct numeric value (bytes)
+            return valueNode.asLong();
+        } else if (valueNode.isInt()) {
+            // Integer value (bytes)
+            return valueNode.asLong();
+        } else if (valueNode.isTextual()) {
+            // String format - may include units (KB, MB, GB, TB)
+            String valueStr = valueNode.asText().trim();
+            try {
+                // Try to parse as plain number first (might be large number as string)
+                return Long.parseLong(valueStr);
+            } catch (NumberFormatException e) {
+                // Try to parse with units
+                return parseCapacityWithUnits(valueStr);
+            }
+        }
+        
+        logger.warn(String.format("Unable to parse capacity value for field '%s': %s", 
+            fieldName, valueNode.toString()));
+        return 0L;
+    }
+    
+    /**
+     * Parse capacity string with units (e.g., "1.5TB", "500GB", "1024MB")
+     * Converts to bytes
+     */
+    private long parseCapacityWithUnits(String valueStr) {
+        if (valueStr == null || valueStr.isEmpty()) {
+            return 0L;
+        }
+        
+        valueStr = valueStr.toUpperCase().trim();
+        
+        // Extract numeric part and unit
+        String numericPart = valueStr.replaceAll("[^0-9.]", "");
+        String unit = valueStr.replaceAll("[0-9.]", "").trim();
+        
+        double value;
+        try {
+            value = Double.parseDouble(numericPart);
+        } catch (NumberFormatException e) {
+            logger.warn(String.format("Failed to parse numeric part of capacity: %s", valueStr));
+            return 0L;
+        }
+        
+        // Convert to bytes based on unit
+        switch (unit) {
+            case "B":
+                return (long) value;
+            case "KB":
+            case "K":
+                return (long) (value * 1024);
+            case "MB":
+            case "M":
+                return (long) (value * 1024 * 1024);
+            case "GB":
+            case "G":
+                return (long) (value * 1024 * 1024 * 1024);
+            case "TB":
+            case "T":
+                return (long) (value * 1024 * 1024 * 1024 * 1024);
+            case "PB":
+            case "P":
+                return (long) (value * 1024 * 1024 * 1024 * 1024 * 1024);
+            default:
+                logger.warn(String.format("Unknown capacity unit '%s' in value: %s", unit, valueStr));
+                return (long) value; // Assume bytes
+        }
+    }
+    
+    /**
+     * URL encode a string for safe use in query parameters
+     */
+    private String urlEncode(String value) {
+        try {
+            return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8.toString());
+        } catch (java.io.UnsupportedEncodingException e) {
+            // This should never happen as UTF-8 is always supported
+            logger.error("UTF-8 encoding not supported", e);
+            return value;
+        }
+    }
+    
+    /**
      * Clear cached token (useful for forced re-authentication)
      */
     public void clearTokenCache(String storageUuid) {
