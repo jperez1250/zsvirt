@@ -5,15 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.*;
-import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
-import org.apache.http.ssl.SSLContextBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.zstack.core.CoreService;
 import org.zstack.core.crypt.CryptoFacade;
-import org.zstack.header.errorcode.ErrorCode;
 import org.zstack.header.errorcode.OperationFailureException;
 import org.zstack.header.exception.CloudRuntimeException;
 import org.zstack.utils.Utils;
@@ -21,7 +17,6 @@ import org.zstack.utils.logging.CLogger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -38,15 +33,13 @@ public class FlashSystemApiClient {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     
     @Autowired
-    private CoreService coreService;
-    
-    @Autowired
     private CryptoFacade cryptoFacade;
     
     // Token cache per storage configuration
     private final ConcurrentHashMap<String, CachedToken> tokenCache = new ConcurrentHashMap<>();
     
-    // HTTP client with SSL support
+    // HTTP client uses the JVM trust store. Arrays with self-signed certificates must
+    // install their CA certificate in the management node trust store.
     private final CloseableHttpClient httpClient;
     
     private static class CachedToken {
@@ -62,13 +55,15 @@ public class FlashSystemApiClient {
             return System.currentTimeMillis() >= expiryTime;
         }
     }
+
+    private static class AuthenticationRejectedException extends RuntimeException {
+        private AuthenticationRejectedException() {
+            super("FlashSystem rejected the authentication token");
+        }
+    }
     
     public FlashSystemApiClient() {
         try {
-            // Create HTTP client that accepts self-signed certificates
-            SSLContextBuilder sslBuilder = new SSLContextBuilder();
-            sslBuilder.loadTrustMaterial(null, (chain, authType) -> true);
-            
             RequestConfig requestConfig = RequestConfig.custom()
                     .setConnectTimeout(FlashSystemConstant.DEFAULT_API_TIMEOUT * 1000)
                     .setSocketTimeout(FlashSystemConstant.DEFAULT_API_TIMEOUT * 1000)
@@ -76,8 +71,6 @@ public class FlashSystemApiClient {
                     .build();
             
             this.httpClient = HttpClients.custom()
-                    .setSSLContext(sslBuilder.build())
-                    .setSSLHostnameVerifier(new NoopHostnameVerifier())
                     .setDefaultRequestConfig(requestConfig)
                     .build();
         } catch (Exception e) {
@@ -98,20 +91,14 @@ public class FlashSystemApiClient {
         }
         
         try {
-            String url = buildUrl(scfg.getManagementIp(), FlashSystemConstant.AUTH_ENDPOINT);
+            String url = buildUrl(scfg, FlashSystemConstant.AUTH_ENDPOINT);
             
             HttpPost post = new HttpPost(url);
-            post.setHeader("Content-Type", "application/json");
+            post.setHeader("Accept", "application/json");
+            post.setHeader("X-Auth-Username", scfg.getUsername());
+            post.setHeader("X-Auth-Password", decryptPassword(scfg.getPassword()));
             
-            // Build authentication payload
-            Map<String, String> authPayload = new HashMap<>();
-            authPayload.put("username", scfg.getUsername());
-            authPayload.put("password", decryptPassword(scfg.getPassword()));
-            
-            StringEntity entity = new StringEntity(objectMapper.writeValueAsString(authPayload), StandardCharsets.UTF_8);
-            post.setEntity(entity);
-            
-            logger.debug(String.format("Authenticating to FlashSystem[%s:%d]", scfg.getManagementIp(), FlashSystemConstant.DEFAULT_REST_PORT));
+            logger.debug(String.format("Authenticating to FlashSystem[%s:%d]", scfg.getManagementIp(), getRestApiPort(scfg)));
             
             try (CloseableHttpResponse response = httpClient.execute(post)) {
                 int statusCode = response.getStatusLine().getStatusCode();
@@ -178,14 +165,43 @@ public class FlashSystemApiClient {
     public JsonNode put(FlashSystemStorageVO scfg, String endpoint, Map<String, Object> body) {
         return executeApiCall(scfg, "PUT", endpoint, body);
     }
+
+    /**
+     * Resolve the array volume name from a multipath WWID. Keeping this lookup in
+     * the sole array client prevents lifecycle code from guessing array identifiers.
+     */
+    public String findVolumeName(FlashSystemStorageVO scfg, String wwid) {
+        JsonNode volumes = get(scfg, FlashSystemConstant.LSVOLUME_ENDPOINT + "?filter=value:uid:" + wwid);
+        if (volumes == null) {
+            return null;
+        }
+        JsonNode volume = volumes.isArray() ? volumes.path(0) : volumes;
+        String name = volume.path("name").asText();
+        return name.isEmpty() ? null : name;
+    }
     
     /**
      * Generic method to execute API calls with authentication
      */
     private JsonNode executeApiCall(FlashSystemStorageVO scfg, String method, String endpoint, Map<String, Object> body) {
+        // Authentication failures can occur after a controller expires a token. Retry
+        // exactly once with a newly obtained token; do not recurse indefinitely.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                return executeApiCallOnce(scfg, method, endpoint, body);
+            } catch (AuthenticationRejectedException e) {
+                if (attempt == 1) {
+                    throw new OperationFailureException(operr(
+                            "FlashSystem API rejected a refreshed authentication token (%s %s)", method, endpoint));
+                }
+            }
+        }
+        return null; // unreachable, retained for the compiler
+    }
+
+    private JsonNode executeApiCallOnce(FlashSystemStorageVO scfg, String method, String endpoint, Map<String, Object> body) {
         String token = authenticate(scfg);
-        String url = buildUrl(scfg.getManagementIp(), endpoint);
-        
+        String url = buildUrl(scfg, endpoint);
         HttpRequestBase request;
         switch (method.toUpperCase()) {
             case "GET":
@@ -229,12 +245,10 @@ public class FlashSystemApiClient {
                         org.apache.commons.io.IOUtils.toString(responseEntity.getContent(), StandardCharsets.UTF_8) : 
                         "No response body";
                     
-                    // Check if token expired
                     if (statusCode == 401 || statusCode == 403) {
-                        logger.warn(String.format("Token expired or invalid for FlashSystem[%s], clearing cache", scfg.getUuid()));
                         tokenCache.remove(scfg.getUuid());
-                        // Retry once with fresh authentication
-                        return executeApiCall(scfg, method, endpoint, body);
+                        logger.warn(String.format("Token expired or invalid for FlashSystem[%s], clearing cache", scfg.getUuid()));
+                        throw new AuthenticationRejectedException();
                     }
                     
                     throw new OperationFailureException(operr(
@@ -268,14 +282,18 @@ public class FlashSystemApiClient {
     /**
      * Build full URL for API endpoint
      */
-    private String buildUrl(String ipAddress, String endpoint) {
+    private String buildUrl(FlashSystemStorageVO scfg, String endpoint) {
         if (!endpoint.startsWith("/")) {
             endpoint = "/" + endpoint;
         }
         if (!endpoint.startsWith("/" + FlashSystemConstant.REST_API_VERSION)) {
             endpoint = "/" + FlashSystemConstant.REST_API_VERSION + endpoint;
         }
-        return String.format("https://%s:%d%s", ipAddress, FlashSystemConstant.DEFAULT_REST_PORT, endpoint);
+        return String.format("https://%s:%d%s", scfg.getManagementIp(), getRestApiPort(scfg), endpoint);
+    }
+
+    private int getRestApiPort(FlashSystemStorageVO scfg) {
+        return scfg.getRestApiPort() == null ? FlashSystemConstant.DEFAULT_REST_PORT : scfg.getRestApiPort();
     }
     
     /**

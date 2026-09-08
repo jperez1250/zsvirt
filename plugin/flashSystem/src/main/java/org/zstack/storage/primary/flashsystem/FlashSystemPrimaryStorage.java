@@ -3,16 +3,10 @@ package org.zstack.storage.primary.flashsystem;
 import org.springframework.beans.factory.annotation.Autowire;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
-import org.zstack.core.asyncbatch.While;
 import org.zstack.core.cloudbus.CloudBus;
-import org.zstack.core.cloudbus.CloudBusCallBack;
 import org.zstack.core.db.DatabaseFacade;
-import org.zstack.core.db.Q;
 import org.zstack.header.core.Completion;
-import org.zstack.header.core.NoErrorCompletion;
-import org.zstack.header.errorcode.ErrorCode;
 import org.zstack.header.host.*;
-import org.zstack.header.message.MessageReply;
 import org.zstack.header.storage.primary.*;
 import org.zstack.header.storage.snapshot.VolumeSnapshotInventory;
 import org.zstack.header.vm.VmInstanceSpec;
@@ -21,9 +15,7 @@ import org.zstack.storage.primary.PrimaryStorageBase;
 import org.zstack.utils.Utils;
 import org.zstack.utils.logging.CLogger;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import static org.zstack.core.Platform.operr;
@@ -136,7 +128,7 @@ public class FlashSystemPrimaryStorage extends PrimaryStorageBase {
         
         try {
             VolumeInventory vol = msg.getVolume();
-            String volumeName = extractVolumeName(vol.getInstallPath());
+            String volumeName = buildVolumeName(vol.getUuid());
             
             if (volumeName != null) {
                 // Unmap volume from host group first
@@ -247,7 +239,7 @@ public class FlashSystemPrimaryStorage extends PrimaryStorageBase {
             params.put("vdisk_id", volumeName);
             params.put("hostcluster", scfg.getHostGroup());
             
-            apiClient.post(scfg, FlashSystemConstant.ADDHOSTENDPOINT, params);
+            apiClient.post(scfg, FlashSystemConstant.MKVDISKHOSTMAP_ENDPOINT, params);
             logger.debug(String.format("Mapped volume[%s] to host group[%s]", volumeName, scfg.getHostGroup()));
         }
     }
@@ -261,7 +253,7 @@ public class FlashSystemPrimaryStorage extends PrimaryStorageBase {
             params.put("vdisk_id", volumeName);
             params.put("hostcluster", scfg.getHostGroup());
             
-            apiClient.post(scfg, FlashSystemConstant.RMHOSTENDPOINT, params);
+            apiClient.post(scfg, FlashSystemConstant.RMVDISKHOSTMAP_ENDPOINT, params);
             logger.debug(String.format("Unmapped volume[%s] from host group[%s]", volumeName, scfg.getHostGroup()));
         }
     }
@@ -287,10 +279,10 @@ public class FlashSystemPrimaryStorage extends PrimaryStorageBase {
         if (installPath == null) {
             return null;
         }
-        // Install path format: /dev/mapper/mpath-<wwid> or similar
-        // We need to query FlashSystem to get the volume name from WWID
-        // For now, return null - this should be enhanced to query FlashSystem
-        return null;
+        String wwid = installPath.startsWith(FlashSystemConstant.MULTIPATH_PREFIX)
+                ? installPath.substring(FlashSystemConstant.MULTIPATH_PREFIX.length()) : installPath;
+        FlashSystemStorageVO scfg = getFlashSystemConfig();
+        return scfg == null ? null : apiClient.findVolumeName(scfg, wwid);
     }
     
     /**
