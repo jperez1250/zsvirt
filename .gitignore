@@ -1,0 +1,36 @@
+```
+# Java/Maven build artifacts
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Dependencies
+lib/
+libs/
+
+# IDE files
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Maven
+pom.xml.tag
+pom.xml.releaseBackup
+dependency-reduced-pom.xml
+```
