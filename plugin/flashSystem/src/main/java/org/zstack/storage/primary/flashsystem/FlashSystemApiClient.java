@@ -180,59 +180,9 @@ public class FlashSystemApiClient {
         if (volumes == null) {
             return null;
         }
-        JsonNode result = volumes.path("result");
-        JsonNode volume = result.isMissingNode() ? volumes : result;
-        volume = volume.isArray() ? volume.path(0) : volume;
+        JsonNode volume = volumes.isArray() ? volumes.path(0) : volumes;
         String name = volume.path("name").asText();
         return name.isEmpty() ? null : name;
-    }
-
-    /** List the vdisks in the configured pool using the unified client. */
-    public List<FlashSystemVolume> listVolumes(FlashSystemStorageVO scfg) {
-        Map<String, Object> request = new HashMap<>();
-        request.put("mdiskgrp", scfg.getStoragePool());
-        JsonNode response = post(scfg, FlashSystemConstant.LSVOLUME_ENDPOINT, request);
-        List<FlashSystemVolume> volumes = new ArrayList<>();
-        JsonNode result = response == null ? null : response.path("result");
-        if (result != null && result.isMissingNode()) {
-            result = response;
-        }
-        if (result != null && result.isArray()) {
-            for (JsonNode volume : result) {
-                FlashSystemVolume inventory = new FlashSystemVolume();
-                inventory.setId(volume.path("id").asText());
-                inventory.setName(volume.path("name").asText());
-                inventory.setWwid(volume.path("udid").asText());
-                inventory.setCapacity(volume.path("capacity").asLong());
-                inventory.setStoragePool(volume.path("mdisk_grp_name").asText());
-                inventory.setStatus(volume.path("status").asText());
-                volumes.add(inventory);
-            }
-        }
-        return volumes;
-    }
-
-    /** Return the configured pool's capacity record. */
-    public FlashSystemPool getPool(FlashSystemStorageVO scfg) {
-        Map<String, Object> request = new HashMap<>();
-        request.put("mdiskgrp", scfg.getStoragePool());
-        JsonNode response = post(scfg, FlashSystemConstant.LSMDISKGRP_ENDPOINT, request);
-        JsonNode result = response == null ? null : response.path("result");
-        if (result != null && result.isMissingNode()) {
-            result = response;
-        }
-        JsonNode pool = result != null && result.isArray() ? result.path(0) : result;
-        if (pool == null || pool.isMissingNode()) {
-            return null;
-        }
-        FlashSystemPool inventory = new FlashSystemPool();
-        inventory.setId(pool.path("id").asText());
-        inventory.setName(pool.path("name").asText());
-        inventory.setTotalCapacity(pool.path("total_capacity").asLong());
-        inventory.setUsedCapacity(pool.path("used_capacity").asLong());
-        inventory.setFreeCapacity(pool.path("free_capacity").asLong());
-        inventory.setStatus(pool.path("status").asText());
-        return inventory;
     }
     
     /**

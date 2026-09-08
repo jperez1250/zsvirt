@@ -18,17 +18,10 @@ All implementation code lives under `org.zstack.storage.primary.flashsystem`:
 - `FlashSystemApiClient` is the only REST client. It owns authentication, token
   caching, bounded token renewal, TLS, timeouts, and request execution.
 - `FlashSystemKvmBackend` handles KVM shared-block-storage integration.
-- `model/` contains the array-facing vdisk, pool, and FlashCopy representations
-  used by the primary-storage client; it replaces the standalone `flashsystem`
-  module's duplicate DTOs and services.
 
 The plugin deliberately does **not** expose a separate management REST controller.
 Array credentials are retained in the primary-storage configuration rather than
 accepted through an unauthenticated management API.
-
-The repository contains one canonical plugin directory: `plugin/flashSystem`.
-The former lowercase `plugin/flashsystem` Maven module has been folded into this
-plugin rather than being built or configured independently.
 
 ## Security and configuration
 
