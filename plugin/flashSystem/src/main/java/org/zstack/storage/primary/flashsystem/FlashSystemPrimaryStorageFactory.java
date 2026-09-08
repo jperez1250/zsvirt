@@ -20,6 +20,7 @@ import org.zstack.kvm.KVMStartVmExtensionPoint;
 import org.zstack.kvm.KVMAgentCommands;
 import org.zstack.storage.primary.PrimaryStorageBase;
 import org.zstack.storage.primary.PrimaryStorageCapacityUpdater;
+import org.zstack.storage.primary.flashsystem.model.FlashSystemPool;
 import org.zstack.utils.Utils;
 import org.zstack.utils.logging.CLogger;
 
@@ -137,17 +138,10 @@ public class FlashSystemPrimaryStorageFactory implements PrimaryStorageFactory, 
         }
         
         try {
-            // Query FlashSystem pool capacity via REST API
-            Map<String, Object> params = new HashMap<>();
-            params.put("mdiskgrp", scfg.getStoragePool());
-            
-            com.fasterxml.jackson.databind.JsonNode response = apiClient.get(scfg, 
-                FlashSystemConstant.LSMDISKGRP_ENDPOINT + "/" + scfg.getStoragePool());
-            
-            if (response != null && response.has("capacity")) {
-                long totalCapacity = response.path("capacity").asLong() * 1024 * 1024; // Convert to bytes
-                long usedCapacity = response.path("used_capacity").asLong() * 1024 * 1024;
-                long availableCapacity = totalCapacity - usedCapacity;
+            FlashSystemPool pool = apiClient.getPool(scfg);
+            if (pool != null) {
+                long totalCapacity = pool.getTotalCapacity();
+                long availableCapacity = pool.getFreeCapacity();
                 
                 // Update ZStack capacity
                 PrimaryStorageCapacityUpdater updater = new PrimaryStorageCapacityUpdater(storageUuid);

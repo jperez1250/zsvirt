@@ -12,12 +12,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.zstack.core.crypt.CryptoFacade;
 import org.zstack.header.errorcode.OperationFailureException;
 import org.zstack.header.exception.CloudRuntimeException;
+import org.zstack.storage.primary.flashsystem.model.FlashSystemPool;
+import org.zstack.storage.primary.flashsystem.model.FlashSystemVolume;
 import org.zstack.utils.Utils;
 import org.zstack.utils.logging.CLogger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.zstack.core.Platform.operr;
