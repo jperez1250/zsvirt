@@ -1,53 +1,41 @@
-# Compiled Java classes
+# Compiled and build artifacts
 *.class
-
-# Build directories
-target/
+*.o
+*.obj
+*.out
 build/
+target/
 
-# IDE files
-.idea/
+# Dependencies
+.gradle/
+.mypy_cache/
+.pytest_cache/
+__pycache__/
+node_modules/
+venv/
+.venv/
+
+# Editors
 .vscode/
-
-# Log files
-*.log
-
-# Temporary files
-*.tmp
+.idea/
 *.swp
+*.swo
+*.tmp
 
-# Environment files
+# Logs and coverage
+*.log
+coverage/
+htmlcov/
+.coverage
+
+# System files
+.DS_Store
+Thumbs.db
 .env
 .env.local
 *.env.*
 
-# Package manager caches
-.gradle/
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Python related (if applicable)
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-.mypy_cache/
-.coverage
-htmlcov/
-
-# Distribution artifacts
-dist/
-build/
-*.egg-info/
-
-# Compression files
+# Archives
 *.zip
 *.gz
 *.tar
